@@ -10,13 +10,14 @@ public class Config {
                         Enforces safe world random access. \s
                         This feature detects unsafe off-thread world random access, helping to find the causes \s
                         of mysterious "Accessing LegacyRandomSource from multiple threads" crash. \s
-                        The default behavior is to fail hard when such bad things happens. \s
-                        Disabling this option will replace this behavior with a warning. \s
+                        When enabled, the mod will throw an exception when unsafe access is detected. \s
+                        When disabled, the mod will log a warning and use a fallback random source. \s
                         
-                        It is generally not recommended to disable this settings unless you know what you are doing \s
+                        Default is disabled to prevent crashes with mods that access random from different threads. \s
+                        Enable this only for debugging purposes or if you want to catch threading issues. \s
                         
                         """)
-            .getBoolean(true,true);
+            .getBoolean(false,true);
 
     public static void init() {
     }

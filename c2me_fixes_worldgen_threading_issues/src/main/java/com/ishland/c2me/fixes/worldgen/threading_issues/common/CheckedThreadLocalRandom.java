@@ -14,35 +14,42 @@ public class CheckedThreadLocalRandom extends SingleThreadedRandomSource {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("CheckedThreadLocalRandom");
 
-    private static final ThreadLocal<SingleThreadedRandomSource> FALLBACK = ThreadLocal.withInitial(() -> new SingleThreadedRandomSource(new Random().nextLong()));
-
     static {
         if (Config.enforceSafeWorldRandomAccess) {
-            LOGGER.info("Enforcing safe world random access");
+            LOGGER.warn("Safe world random access is ENFORCED - unsafe access will cause crashes");
         } else {
-            LOGGER.warn("Not enforcing safe world random access");
+            LOGGER.info("Safe world random access is DISABLED - unsafe access will use fallback");
         }
     }
 
     private final Supplier<Thread> owner;
+    private final long originalSeed;
+    private boolean hasWarned = false;
+    // Per-instance fallback that's thread-local
+    private final ThreadLocal<SingleThreadedRandomSource> fallback = ThreadLocal.withInitial(() -> {
+        // Use original seed mixed with thread name for deterministic but unique per-thread behavior
+        long threadSeed = originalSeed ^ Thread.currentThread().getName().hashCode();
+        return new SingleThreadedRandomSource(threadSeed);
+    });
 
     public CheckedThreadLocalRandom(long seed, Supplier<Thread> owner) {
         super(seed);
         this.owner = Objects.requireNonNull(owner);
+        this.originalSeed = seed;
     }
 
     private boolean isSafe() {
         Thread owner = this.owner != null ? this.owner.get() : null;
-        boolean notOwner = owner != null && Thread.currentThread() != owner;
-        if (notOwner) {
-            handleNotOwner();
-            return false;
-        } else {
-            return true;
-        }
+        return owner == null || Thread.currentThread() == owner;
     }
 
     private void handleNotOwner() {
+        // Only warn once per instance to avoid log spam
+        if (hasWarned) {
+            return;
+        }
+        hasWarned = true;
+        
         StringBuilder builder = new StringBuilder();
         final String exceptionMessage = "ThreadLocalRandom accessed from a different thread (owner: %s, current: %s)"
                 .formatted(this.owner.get().getName(), Thread.currentThread().getName());
@@ -77,7 +84,10 @@ public class CheckedThreadLocalRandom extends SingleThreadedRandomSource {
         if (isSafe()) {
             super.setSeed(seed);
         } else {
-            FALLBACK.get().setSeed(seed);
+            // Log warning (but don't throw yet)
+            handleNotOwner();
+            // Use fallback with deterministic seed
+            fallback.get().setSeed(seed);
         }
     }
 
@@ -86,7 +96,81 @@ public class CheckedThreadLocalRandom extends SingleThreadedRandomSource {
         if (isSafe()) {
             return super.next(bits);
         } else {
-            return FALLBACK.get().next(bits);
+            // Log warning (but don't throw yet)
+            handleNotOwner();
+            // Use fallback with deterministic seed
+            return fallback.get().next(bits);
+        }
+    }
+    
+    // Override other common methods to ensure they also use the fallback
+    @Override
+    public boolean nextBoolean() {
+        if (isSafe()) {
+            return super.nextBoolean();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextBoolean();
+        }
+    }
+    
+    @Override
+    public float nextFloat() {
+        if (isSafe()) {
+            return super.nextFloat();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextFloat();
+        }
+    }
+    
+    @Override
+    public double nextDouble() {
+        if (isSafe()) {
+            return super.nextDouble();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextDouble();
+        }
+    }
+    
+    @Override
+    public int nextInt() {
+        if (isSafe()) {
+            return super.nextInt();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextInt();
+        }
+    }
+    
+    @Override
+    public int nextInt(int bound) {
+        if (isSafe()) {
+            return super.nextInt(bound);
+        } else {
+            handleNotOwner();
+            return fallback.get().nextInt(bound);
+        }
+    }
+    
+    @Override
+    public long nextLong() {
+        if (isSafe()) {
+            return super.nextLong();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextLong();
+        }
+    }
+    
+    @Override
+    public double nextGaussian() {
+        if (isSafe()) {
+            return super.nextGaussian();
+        } else {
+            handleNotOwner();
+            return fallback.get().nextGaussian();
         }
     }
 }
